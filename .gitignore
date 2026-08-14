@@ -1,0 +1,67 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files — everything starting with .env is ignored by default (this
+# covers .env, .env.local, .env.*.local, .env.production, etc.), except
+# .env.example, which is intentionally tracked as a safe template with no
+# real secrets.
+.env
+.env.local
+.env.*.local
+.env.production
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# uploaded files — never commit user content or large binaries
+/storage/
+
+# local sqlite database — Prisma resolves the relative DATABASE_URL path
+# against prisma/schema.prisma's location, so the actual file lands at
+# prisma/prisma/dev.db, not prisma/dev.db. Both are covered here, plus a
+# catch-all for any *.db/*.db-journal file anywhere in the project.
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/prisma/
+*.db
+*.db-journal
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Claude Code local session/tooling config — machine-specific, not part of
+# the app; safe to keep .claude/launch.json (just dev-server config) tracked.
+.claude/settings.local.json

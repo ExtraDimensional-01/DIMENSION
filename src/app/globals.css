@@ -1,0 +1,416 @@
+@import "tailwindcss";
+
+:root {
+  --background: #07070a;
+  --surface: #121016;
+  --surface-hover: #1a1720;
+  --border: #262330;
+  --border-subtle: #1a1720;
+  --foreground: #f6f5f9;
+  --muted: #a19dae;
+  --muted-2: #6f6b7c;
+  --accent: #9b4dff;
+  --accent-hover: #8a2eff;
+  --accent-foreground: #ffffff;
+  --accent-glow: rgba(155, 77, 255, 0.55);
+  --glitch-cyan: #2de3ff;
+  --glitch-magenta: #ff2f92;
+  --danger: #f04444;
+  --success: #34d399;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-chakra);
+}
+
+* {
+  border-color: var(--border);
+}
+
+@layer components {
+  .input {
+    width: 100%;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    color: var(--foreground);
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(155, 77, 255, 0.15);
+  }
+  .input::placeholder {
+    color: var(--muted-2);
+  }
+
+  /* Small tracked-out uppercase eyebrow/kicker label used above headings */
+  .kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .kicker::before {
+    content: "";
+    width: 1.25em;
+    height: 1px;
+    background: var(--accent);
+    opacity: 0.7;
+  }
+
+  /* Angular "cut corner" panel treatment — sharp tech-panel silhouette */
+  .cut-corner {
+    clip-path: polygon(
+      12px 0,
+      100% 0,
+      100% calc(100% - 12px),
+      calc(100% - 12px) 100%,
+      0 100%,
+      0 12px
+    );
+  }
+  .cut-corner-sm {
+    clip-path: polygon(
+      7px 0,
+      100% 0,
+      100% calc(100% - 7px),
+      calc(100% - 7px) 100%,
+      0 100%,
+      0 7px
+    );
+  }
+
+  /* Viewfinder-style corner ticks, revealed on hover/active */
+  .corner-frame {
+    position: relative;
+  }
+  .corner-frame::before,
+  .corner-frame::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    opacity: 0;
+    transition: opacity 160ms ease;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .corner-frame::before {
+    top: 6px;
+    left: 6px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+  }
+  .corner-frame::after {
+    bottom: 6px;
+    right: 6px;
+    border-bottom: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+  }
+  .corner-frame:hover::before,
+  .corner-frame:hover::after,
+  .corner-frame.is-active::before,
+  .corner-frame.is-active::after {
+    opacity: 1;
+  }
+
+  /* Hides scrollbars on horizontally-scrolling rows (Collabs discovery sections) */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Neon glow utilities */
+  .glow-accent {
+    box-shadow: 0 0 0 1px rgba(155, 77, 255, 0.4), 0 0 24px -4px var(--accent-glow);
+  }
+  .glow-text {
+    text-shadow: 0 0 18px var(--accent-glow);
+  }
+
+  /* RGB-split glitch effect. Requires a `data-text` attr matching the visible text. */
+  .text-glitch {
+    position: relative;
+    display: inline-block;
+  }
+  .text-glitch::before,
+  .text-glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+  }
+  .text-glitch::before {
+    color: var(--glitch-cyan);
+    clip-path: polygon(0 3%, 100% 3%, 100% 42%, 0 42%);
+    transform: translate(0, 0);
+  }
+  .text-glitch::after {
+    color: var(--glitch-magenta);
+    clip-path: polygon(0 58%, 100% 58%, 100% 97%, 0 97%);
+    transform: translate(0, 0);
+  }
+  .text-glitch:hover::before {
+    opacity: 0.85;
+    animation: glitch-shift-1 420ms steps(2, jump-end) infinite;
+  }
+  .text-glitch:hover::after {
+    opacity: 0.85;
+    animation: glitch-shift-2 420ms steps(2, jump-end) infinite;
+  }
+}
+
+@keyframes glitch-shift-1 {
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-3px, -1px);
+  }
+  100% {
+    transform: translate(2px, 1px);
+  }
+}
+@keyframes glitch-shift-2 {
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(3px, 1px);
+  }
+  100% {
+    transform: translate(-2px, -1px);
+  }
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "cv11", "ss01";
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Faint structural grid + off-center violet glow behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 900px 600px at 85% -10%, rgba(155, 77, 255, 0.16), transparent 60%),
+    radial-gradient(ellipse 620px 480px at 6% 92%, rgba(155, 77, 255, 0.08), transparent 55%),
+    radial-gradient(ellipse 700px 500px at -10% 100%, rgba(45, 227, 255, 0.05), transparent 55%),
+    repeating-linear-gradient(to right, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 88px),
+    repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 88px),
+    repeating-linear-gradient(115deg, transparent 0 340px, rgba(255, 255, 255, 0.018) 340px 341px, transparent 341px 680px),
+    repeating-linear-gradient(28deg, transparent 0 460px, rgba(255, 255, 255, 0.014) 460px 461px, transparent 461px 920px);
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+}
+
+/* Subtle film-grain texture, blended over the whole app */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: var(--accent);
+  color: white;
+}
+
+/* Slim, unobtrusive scrollbar that still matches the dark surface */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--background);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-2);
+}
+
+/* Range inputs (progress bar / volume) styled to look intentional, not default OS chrome */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  width: 12px;
+  margin-top: -4px;
+  border-radius: 999px;
+  background: var(--foreground);
+  box-shadow: 0 0 0 3px rgba(155, 77, 255, 0);
+  transition: box-shadow 120ms ease;
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 5px rgba(155, 77, 255, 0.3);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+input[type="range"]::-moz-range-thumb {
+  height: 12px;
+  width: 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--surface) 0%, var(--surface-hover) 50%, var(--surface) 100%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@layer components {
+  /* Horizontal energy-line divider: bright accent core fading to transparent. */
+  .energy-line {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(155, 77, 255, 0.75) 20%,
+      rgba(255, 255, 255, 0.9) 50%,
+      rgba(155, 77, 255, 0.75) 80%,
+      transparent
+    );
+  }
+
+  /* Larger cut-corner treatment for hero-scale panels */
+  .cut-corner-lg {
+    clip-path: polygon(
+      22px 0,
+      100% 0,
+      100% calc(100% - 22px),
+      calc(100% - 22px) 100%,
+      0 100%,
+      0 22px
+    );
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(155, 77, 255, 0.4), 0 0 24px -4px var(--accent-glow);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(155, 77, 255, 0.6), 0 0 40px -2px var(--accent-glow);
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes drift {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate(-18px, 14px) rotate(3deg);
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.4;
+  }
+  94% {
+    opacity: 1;
+  }
+  96% {
+    opacity: 0.6;
+  }
+  97% {
+    opacity: 1;
+  }
+}
+.animate-flicker {
+  animation: flicker 5s ease-in-out infinite;
+}

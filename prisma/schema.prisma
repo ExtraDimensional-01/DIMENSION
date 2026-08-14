@@ -1,0 +1,487 @@
+// Prisma schema for DIMENSION.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  producerName  String
+  role          String   @default("producer") // "producer" | "viewer" — plain string since SQLite has no native enum support in Prisma
+  bio           String   @default("")
+  profileImage  String? // storage key for profile picture
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  beats            Beat[]
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+
+  // --- Collabs ---
+  creatorProfile       CreatorProfile?
+  collabPostsCreated   CollaborationPost[]        @relation("CreatedCollabPosts")
+  collabApplications   CollaborationApplication[] @relation("CollabApplications")
+  collabParticipations CollaborationParticipant[] @relation("CollabParticipations")
+  collabMessagesSent   CollaborationMessage[]     @relation("CollabMessagesSent")
+  collabFilesUploaded  CollaborationFile[]        @relation("CollabFilesUploaded")
+  collabTasksAssigned  CollaborationTask[]        @relation("CollabTasksAssigned")
+  reviewsGiven         CollaborationReview[]      @relation("ReviewsGiven")
+  reviewsReceived      CollaborationReview[]      @relation("ReviewsReceived")
+  invitationsSent      CollaborationInvitation[]  @relation("InvitationsSent")
+  invitationsReceived  CollaborationInvitation[]  @relation("InvitationsReceived")
+  notifications        Notification[]
+
+  ordersAsBuyer  Order[] @relation("OrdersAsBuyer")
+  ordersAsSeller Order[] @relation("OrdersAsSeller")
+
+  @@map("users")
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  body        String
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  senderId    String
+  recipientId String
+  sender      User      @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User      @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // Set when this message is the purchase-request that kicked off an Order,
+  // so the thread UI can render the order card (status + confirm/decline)
+  // attached to the right message instead of needing a separate feed.
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("messages")
+}
+
+// A buyer-initiated, trust-based purchase request for one license tier of a
+// beat. DIMENSION never touches money — the buyer and seller coordinate
+// payment themselves (e.g. CashApp) outside the platform, and the seller's
+// confirmation here is simply what unlocks full (uncapped) playback and the
+// tier's file download for that buyer.
+model Order {
+  id            String    @id @default(cuid())
+  orderNumber   String    @unique // human-friendly reference, e.g. "DIM-7K2M9XQP"
+  status        String    @default("pending") // pending | confirmed | declined
+  paymentMethod String // "CashApp" | "Venmo" | "PayPal" | "Zelle" | "Apple Pay" | "Other" (or custom text)
+  priceCents    Int // snapshot of the license's price at the time of the request
+  // Immutable JSON copy of the license's full terms at the moment of purchase
+  // (see LicenseSnapshot in src/lib/license-snapshot.ts). If the producer
+  // later edits the live BeatLicense row, this snapshot — and therefore the
+  // buyer's PDF/receipt — must never change.
+  licenseSnapshot String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  confirmedAt     DateTime?
+
+  beatId    String
+  beat      Beat        @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  licenseId String
+  license   BeatLicense @relation(fields: [licenseId], references: [id], onDelete: Restrict)
+  buyerId   String
+  buyer     User        @relation("OrdersAsBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId  String
+  seller    User        @relation("OrdersAsSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+
+  messages Message[]
+
+  @@index([beatId])
+  @@index([licenseId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@map("orders")
+}
+
+// One purchasable tier for a beat (e.g. "MP3 Lease", "WAV Lease", "Exclusive
+// Rights"). Each tier has its own price, usage terms, permissions, and
+// deliverable file — a buyer picks a tier, and once the seller confirms
+// payment they can download that tier's file. isExclusive tiers, once sold,
+// set Beat.exclusiveSoldAt so the beat can no longer be purchased.
+//
+// These fields describe the CURRENT/live terms a producer is offering. When
+// an Order is placed, the relevant fields are copied into that Order's
+// licenseSnapshot — editing a BeatLicense after a sale never changes past
+// orders (see licenseSnapshot on Order).
+model BeatLicense {
+  id          String   @id @default(cuid())
+  name        String // e.g. "MP3 Lease" — preset or producer-entered custom name
+  priceCents  Int
+  terms       String   @default("") // free-text usage summary shown to the buyer before purchase
+  fileKey     String
+  fileFormat  String // "mp3" | "wav" | "zip"
+  fileSize    Int // bytes
+  isExclusive Boolean  @default(false)
+  isActive    Boolean  @default(true) // disabled tiers are hidden from buyers but kept for producer management/history
+  sortOrder   Int      @default(0)
+
+  // --- Structured license terms (producer-configurable per tier) ---
+  includedFormats     String  @default("[]") // JSON array, e.g. ["MP3"], ["WAV","Trackout/Stems"]
+  commercialUse       Boolean @default(true)
+  distributionAllowed Boolean @default(true) // streaming platforms, digital distributors
+  musicVideoAllowed   Boolean @default(true)
+  performanceAllowed  Boolean @default(true) // live performance / broadcast
+  socialMediaAllowed  Boolean @default(true)
+  streamLimit         Int? // null = unlimited
+  salesLimit          Int? // null = unlimited (copies/units sold using this instrumental)
+  creditRequired      Boolean @default(false)
+  creditText          String  @default("") // required credit line, e.g. "Prod. by ExtraDimensional"
+  otherRestrictions   String  @default("") // free-text catch-all for anything not covered above
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  beatId String
+  beat   Beat   @relation(fields: [beatId], references: [id], onDelete: Cascade)
+
+  orders Order[]
+
+  @@index([beatId])
+  @@map("beat_licenses")
+}
+
+model Beat {
+  id          String   @id @default(cuid())
+  title       String
+  bpm         Int
+  key         String
+  genre       String
+  mood        String?
+  description String   @default("")
+
+  // Storage keys (not URLs) — resolved to streaming URLs by the storage layer.
+  audioKey     String
+  audioFormat  String // "mp3" | "wav"
+  audioSize    Int // bytes
+  durationSec  Float?
+  coverKey     String?
+  waveformPeaks String? // JSON-encoded array of ~120 normalized (0-1) amplitude peaks, extracted client-side at upload
+
+  playCount  Int     @default(0)
+  isPublic   Boolean @default(true) // false = unlisted: hidden from browse/search/profile, viewable via direct link
+  // Set the moment a confirmed Order is for an isExclusive license — once set,
+  // the beat can no longer be purchased under any tier (exclusive rights sold).
+  exclusiveSoldAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  producerId String
+  producer   User   @relation(fields: [producerId], references: [id], onDelete: Cascade)
+
+  tags     BeatTag[]
+  licenses BeatLicense[]
+  orders   Order[]
+
+  @@index([producerId])
+  @@index([genre])
+  @@index([mood])
+  @@index([createdAt])
+  @@index([isPublic])
+  @@map("beats")
+}
+
+model Tag {
+  id   String @id @default(cuid())
+  name String @unique
+
+  beats BeatTag[]
+
+  @@map("tags")
+}
+
+// Explicit join table (rather than implicit m2m) so it's easy to extend
+// later (e.g. tag ordering) without a breaking migration.
+model BeatTag {
+  beatId String
+  tagId  String
+
+  beat Beat @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([beatId, tagId])
+  @@index([tagId])
+  @@map("beat_tags")
+}
+
+// =============================================================================
+// Collabs — creator networking & collaboration marketplace
+// =============================================================================
+
+// Supplementary to User: collab-specific identity (roles/genres/skills/
+// availability). Kept separate from User so the beat-marketplace identity
+// (producerName, bio, role="producer"|"viewer") isn't conflated with the
+// Collabs identity, which is open to every account regardless of that role.
+model CreatorProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roles          String   @default("[]") // JSON array of COLLAB_ROLES — query with quoted `contains`
+  genres         String   @default("[]") // JSON array — query with quoted `contains`
+  skills         String   @default("[]") // JSON array — query with quoted `contains`
+  experience     String   @default("")
+  location       String   @default("")
+  remotePref     String   @default("both") // "remote" | "in_person" | "both"
+  availability   String   @default("open") // "open" | "busy" | "not_available"
+  headline       String   @default("")
+  portfolioLinks String   @default("[]") // JSON array of external URLs (SoundCloud, Spotify, etc.)
+
+  ratingAvg   Float?
+  ratingCount Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([availability])
+  @@map("creator_profiles")
+}
+
+model CollaborationPost {
+  id           String    @id @default(cuid())
+  title        String
+  lookingFor   String // one of COLLAB_ROLES
+  description  String    @default("")
+  genre        String
+  subgenre     String    @default("")
+  mood         String    @default("")
+  skillsNeeded String    @default("[]") // JSON array
+  isPaid       Boolean   @default(false)
+  budgetMin    Int? // cents
+  budgetMax    Int? // cents
+  locationType String    @default("remote") // "remote" | "in_person" | "both"
+  location     String    @default("")
+  deadline     DateTime?
+  status       String    @default("draft") // draft|open|reviewing|in_progress|completed|cancelled
+  contactPref  String    @default("in_app")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creatorId String
+  creator   User   @relation("CreatedCollabPosts", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  applications CollaborationApplication[]
+  invitations  CollaborationInvitation[]
+  files        CollaborationFile[]
+  project      CollaborationProject?
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([lookingFor])
+  @@index([genre])
+  @@index([isPaid])
+  @@index([locationType])
+  @@index([createdAt])
+  @@map("collaboration_posts")
+}
+
+model CollaborationApplication {
+  id                 String   @id @default(cuid())
+  message            String
+  proposedPriceCents Int?
+  portfolioLinks     String   @default("[]") // JSON array of URLs
+  status             String   @default("pending") // pending|accepted|declined|withdrawn
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  postId      String
+  post        CollaborationPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  applicantId String
+  applicant   User              @relation("CollabApplications", fields: [applicantId], references: [id], onDelete: Cascade)
+
+  files CollaborationFile[]
+
+  @@index([postId])
+  @@index([applicantId])
+  @@index([status])
+  @@map("collaboration_applications")
+}
+
+model CollaborationProject {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @default("")
+  status      String    @default("in_progress") // in_progress|completed|cancelled
+  coverKey    String?
+  releaseUrl  String?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  postId String            @unique
+  post   CollaborationPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  participants CollaborationParticipant[]
+  messages     CollaborationMessage[]
+  files        CollaborationFile[]
+  tasks        CollaborationTask[]
+  reviews      CollaborationReview[]
+
+  @@index([status])
+  @@map("collaboration_projects")
+}
+
+model CollaborationParticipant {
+  id                String    @id @default(cuid())
+  role              String
+  joinedAt          DateTime  @default(now())
+  lastReadAt        DateTime?
+  showcaseOnProfile Boolean   @default(true)
+
+  projectId String
+  project   CollaborationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                 @relation("CollabParticipations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("collaboration_participants")
+}
+
+model CollaborationMessage {
+  id        String   @id @default(cuid())
+  body      String   @default("")
+  createdAt DateTime @default(now())
+
+  projectId String
+  project   CollaborationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User                 @relation("CollabMessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+
+  files CollaborationFile[]
+
+  @@index([projectId])
+  @@index([createdAt])
+  @@map("collaboration_messages")
+}
+
+model CollaborationFile {
+  id        String   @id @default(cuid())
+  fileKey   String
+  fileName  String
+  fileType  String // "wav"|"mp3"|"midi"|"zip"|"image"|"document"|"other"
+  fileSize  Int
+  createdAt DateTime @default(now())
+
+  uploaderId String
+  uploader   User   @relation("CollabFilesUploaded", fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  // Exactly ONE of these four is set — enforced in src/lib/collab-files.ts
+  // (SQLite has no usable cross-column CHECK constraint in Prisma 6).
+  postId        String?
+  post          CollaborationPost?        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  applicationId String?
+  application   CollaborationApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       CollaborationProject?     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  messageId     String?
+  message       CollaborationMessage?     @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([applicationId])
+  @@index([projectId])
+  @@index([messageId])
+  @@index([uploaderId])
+  @@map("collaboration_files")
+}
+
+model CollaborationTask {
+  id        String    @id @default(cuid())
+  title     String
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  projectId  String
+  project    CollaborationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assigneeId String?
+  assignee   User?                @relation("CollabTasksAssigned", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([assigneeId])
+  @@index([dueDate])
+  @@map("collaboration_tasks")
+}
+
+model CollaborationReview {
+  id              String   @id @default(cuid())
+  communication   Int
+  reliability     Int
+  qualityOfWork   Int
+  professionalism Int
+  overall         Int
+  comment         String   @default("")
+  createdAt       DateTime @default(now())
+
+  projectId  String
+  project    CollaborationProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviewerId String
+  reviewer   User                 @relation("ReviewsGiven", fields: [reviewerId], references: [id], onDelete: Cascade)
+  revieweeId String
+  reviewee   User                 @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Cascade)
+
+  // One review per direction per project — the core anti-duplicate-review
+  // safeguard. Combined with the API-layer "must have completed a project
+  // together" + "reviewerId != revieweeId" checks, and immutability (no
+  // PATCH/DELETE endpoint exists), this is the full anti-fraud model.
+  @@unique([projectId, reviewerId, revieweeId])
+  @@index([revieweeId])
+  @@index([projectId])
+  @@map("collaboration_reviews")
+}
+
+model CollaborationInvitation {
+  id         String   @id @default(cuid())
+  message    String   @default("")
+  roleNeeded String
+  status     String   @default("pending") // pending|accepted|declined
+  createdAt  DateTime @default(now())
+
+  postId    String
+  post      CollaborationPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  inviterId String
+  inviter   User              @relation("InvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  inviteeId String
+  invitee   User              @relation("InvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([inviterId])
+  @@index([inviteeId])
+  @@index([status])
+  @@map("collaboration_invitations")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  type      String // see NOTIFICATION_TYPES in constants.ts
+  title     String
+  body      String    @default("")
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, readAt])
+  @@index([createdAt])
+  @@map("notifications")
+}
