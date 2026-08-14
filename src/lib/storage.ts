@@ -50,11 +50,12 @@ export function contentTypeForExt(ext: string): string {
   return CONTENT_TYPE_BY_EXT[ext.toLowerCase()] ?? "application/octet-stream";
 }
 
-// turbopackIgnore: STORAGE_DIR is an env-configured path outside the source
-// tree (uploaded files), not a project asset — it must not be traced/bundled.
+// STORAGE_DIR is an env-configured path outside the source tree (local-disk
+// fallback for uploaded files, only ever used when R2 isn't configured) —
+// it must not be traced/bundled into the production output.
 const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  /* turbopackIgnore: true */ process.env.STORAGE_DIR || "./storage"
+  /* turbopackIgnore: true */ process.cwd(),
+  process.env.STORAGE_DIR || "./storage"
 );
 
 class LocalDiskStorage implements StorageAdapter {
