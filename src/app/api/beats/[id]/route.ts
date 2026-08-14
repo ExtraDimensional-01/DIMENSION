@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { storage } from "@/lib/storage";
+import { storage, isR2Configured, headObjectMeta, beatAudioKey } from "@/lib/storage";
 import { beatUpdateSchema } from "@/lib/validations";
 import { serializeBeat } from "@/lib/serialize";
 import { isBeatUnlockedForUser } from "@/lib/orders";
 import { beatInclude } from "@/lib/beat-query";
-import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE_BYTES } from "@/lib/constants";
+import {
+  ALLOWED_AUDIO_TYPES,
+  ALLOWED_IMAGE_TYPES,
+  MAX_AUDIO_SIZE_BYTES,
+  MAX_IMAGE_SIZE_BYTES,
+} from "@/lib/constants";
 
 export async function GET(
   _req: Request,
@@ -48,6 +53,10 @@ export async function PATCH(
   let fields: Record<string, unknown> = {};
   let coverFile: File | null = null;
   let removeCover = false;
+  let audioFile: File | null = null;
+  let uploadedAudio: { key: string } | null = null;
+  let durationSec: number | null | undefined = undefined;
+  let waveformPeaksRaw: unknown;
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await req.formData();
@@ -69,8 +78,31 @@ export async function PATCH(
     const cover = formData.get("cover");
     if (cover instanceof File && cover.size > 0) coverFile = cover;
     removeCover = formData.get("removeCover") === "true";
+
+    const audio = formData.get("audio");
+    if (audio instanceof File && audio.size > 0) audioFile = audio;
+    const audioKeyRaw = formData.get("audioKey");
+    if (typeof audioKeyRaw === "string" && audioKeyRaw) uploadedAudio = { key: audioKeyRaw };
+    const durationRaw = formData.get("durationSec");
+    if (typeof durationRaw === "string" && durationRaw && !Number.isNaN(Number(durationRaw))) {
+      durationSec = Number(durationRaw);
+    }
+    const waveformRaw = formData.get("waveformPeaks");
+    if (typeof waveformRaw === "string" && waveformRaw.length > 0) {
+      try {
+        waveformPeaksRaw = JSON.parse(waveformRaw);
+      } catch {
+        waveformPeaksRaw = undefined;
+      }
+    }
   } else {
-    fields = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    fields = body;
+    if (typeof body.audio?.key === "string") {
+      uploadedAudio = { key: body.audio.key };
+    }
+    if (typeof body.durationSec === "number") durationSec = body.durationSec;
+    waveformPeaksRaw = body.waveformPeaks;
   }
 
   const parsed = beatUpdateSchema.safeParse(fields);
@@ -105,6 +137,54 @@ export async function PATCH(
     newCoverKey = null;
   }
 
+  // --- Optional audio replacement ---
+  let newAudioKey: string | undefined;
+  let newAudioFormat: string | undefined;
+  let newAudioSize: number | undefined;
+
+  if (audioFile) {
+    const ext = ALLOWED_AUDIO_TYPES[audioFile.type];
+    if (!ext) {
+      return NextResponse.json({ error: "Audio must be an MP3 or WAV file" }, { status: 400 });
+    }
+    if (audioFile.size > MAX_AUDIO_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `Audio file must be under ${Math.round(MAX_AUDIO_SIZE_BYTES / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
+    const buffer = Buffer.from(await audioFile.arrayBuffer());
+    newAudioKey = await storage.save(buffer, "audio", ext);
+    newAudioFormat = ext;
+    newAudioSize = audioFile.size;
+  } else if (uploadedAudio) {
+    const ext = uploadedAudio.key.split(".").pop()?.toLowerCase() ?? "";
+    if (
+      !isR2Configured() ||
+      !Object.values(ALLOWED_AUDIO_TYPES).includes(ext) ||
+      uploadedAudio.key !== beatAudioKey(session.user.id, id, ext)
+    ) {
+      return NextResponse.json({ error: "Invalid audio upload" }, { status: 400 });
+    }
+    const meta = await headObjectMeta(uploadedAudio.key);
+    if (!meta) {
+      return NextResponse.json({ error: "Audio upload not found — please re-upload and try again" }, { status: 400 });
+    }
+    if (meta.size > MAX_AUDIO_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `Audio file must be under ${Math.round(MAX_AUDIO_SIZE_BYTES / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
+    newAudioKey = uploadedAudio.key;
+    newAudioFormat = ext;
+    newAudioSize = meta.size;
+  }
+
+  if (newAudioKey && newAudioKey !== existing.audioKey) {
+    await storage.delete(existing.audioKey);
+  }
+
   const data: Prisma.BeatUpdateInput = {};
   if (parsed.data.title !== undefined) data.title = parsed.data.title;
   if (parsed.data.bpm !== undefined) data.bpm = parsed.data.bpm;
@@ -114,6 +194,17 @@ export async function PATCH(
   if (parsed.data.description !== undefined) data.description = parsed.data.description;
   if (parsed.data.isPublic !== undefined) data.isPublic = parsed.data.isPublic;
   if (newCoverKey !== undefined) data.coverKey = newCoverKey;
+  if (newAudioKey !== undefined) {
+    data.audioKey = newAudioKey;
+    data.audioFormat = newAudioFormat;
+    data.audioSize = newAudioSize;
+    data.durationSec = durationSec ?? null;
+    if (Array.isArray(waveformPeaksRaw) && waveformPeaksRaw.every((n) => typeof n === "number" && Number.isFinite(n))) {
+      data.waveformPeaks = JSON.stringify(waveformPeaksRaw.map((n) => Math.max(0, Math.min(1, n))));
+    } else {
+      data.waveformPeaks = null;
+    }
+  }
 
   if (parsed.data.tags !== undefined) {
     const normalizedTags = Array.from(

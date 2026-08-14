@@ -33,6 +33,7 @@ export interface BeatSummary {
   tags: string[];
   audioUrl: string;
   audioFormat: string;
+  audioSize: number;
   coverUrl: string | null;
   durationSec: number | null;
   waveformPeaks: number[] | null;

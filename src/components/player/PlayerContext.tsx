@@ -62,6 +62,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const currentBeatIdRef = useRef<string | null>(null);
   const currentBeatRef = useRef<BeatSummary | null>(null);
   const listenerRef = useRef<ListenerIdentity>({});
+  // Volume is applied through a Web Audio GainNode rather than the plain
+  // audio.volume property. Setting .volume directly makes an instantaneous
+  // jump in the waveform every time it's called, which is audible as a
+  // click/static — a GainNode can *ramp* smoothly between levels instead.
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
 
   const [currentBeat, setCurrentBeat] = useState<BeatSummary | null>(null);
   const [queue, setQueue] = useState<BeatSummary[]>([]);
@@ -78,8 +84,26 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const audio = new Audio();
     audio.preload = "metadata";
-    audio.volume = volume;
+    audio.crossOrigin = "anonymous";
+    // Actual output level now comes from the GainNode below — leave the
+    // element itself at full volume.
+    audio.volume = 1;
     audioRef.current = audio;
+
+    try {
+      const AudioContextClass =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioContext = new AudioContextClass();
+      const source = audioContext.createMediaElementSource(audio);
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = volume;
+      source.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      audioContextRef.current = audioContext;
+      gainNodeRef.current = gainNode;
+    } catch {
+      // Web Audio unavailable — fall back to the plain element volume below.
+    }
 
     const onTimeUpdate = () => {
       const capped = isCapped(currentBeatRef.current, listenerRef.current);
@@ -116,6 +140,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.removeEventListener("playing", onPlaying);
       audio.removeEventListener("ended", onEnded);
       audio.pause();
+      audioContextRef.current?.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -123,6 +148,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playBeat = useCallback((beat: BeatSummary, newQueue?: BeatSummary[]) => {
     const audio = audioRef.current;
     if (!audio) return;
+
+    // Browsers suspend a freshly created AudioContext until a user gesture —
+    // this handler is always triggered by one (a Play click), so resume here.
+    if (audioContextRef.current?.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
 
     if (currentBeatIdRef.current !== beat.id) {
       audio.src = beat.audioUrl;
@@ -144,6 +175,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !currentBeat) return;
+    if (audioContextRef.current?.state === "suspended") {
+      audioContextRef.current.resume().catch(() => {});
+    }
     if (audio.paused) {
       // Resuming a capped track that's already sitting at (or past) the limit
       // should restart from the top rather than silently refusing to play.
@@ -170,9 +204,20 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setVolume = useCallback((v: number) => {
-    const audio = audioRef.current;
     setVolumeState(v);
-    if (audio) audio.volume = v;
+    const audioContext = audioContextRef.current;
+    const gainNode = gainNodeRef.current;
+    if (audioContext && gainNode) {
+      // Ramp smoothly toward the new level instead of jumping to it — an
+      // instantaneous change is what causes the click/static, no matter how
+      // often (or rarely) it's called.
+      gainNode.gain.setTargetAtTime(v, audioContext.currentTime, 0.01);
+    } else {
+      // Web Audio unavailable for some reason — fall back to the plain
+      // element property directly.
+      const audio = audioRef.current;
+      if (audio) audio.volume = v;
+    }
   }, []);
 
   const playNext = useCallback(() => {

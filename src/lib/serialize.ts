@@ -34,6 +34,7 @@ type BeatWithRelations = {
   description: string;
   audioKey: string;
   audioFormat: string;
+  audioSize: number;
   coverKey: string | null;
   durationSec: number | null;
   waveformPeaks: string | null;
@@ -92,6 +93,7 @@ export function serializeBeat(
     tags: beat.tags.map((t) => t.tag.name),
     audioUrl: fileUrl(beat.audioKey)!,
     audioFormat: beat.audioFormat,
+    audioSize: beat.audioSize,
     coverUrl: fileUrl(beat.coverKey),
     durationSec: beat.durationSec,
     waveformPeaks: parseWaveform(beat.waveformPeaks),

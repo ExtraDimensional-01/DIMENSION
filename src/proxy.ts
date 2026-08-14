@@ -2,10 +2,12 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth.config";
 
-// Built directly from the edge-safe config (no providers) so this stays a
-// small Edge Function — the full auth.ts (Credentials provider, bcrypt,
-// Prisma/Turso) is Node.js-only and never bundled here. This instance can
-// only read/verify an existing JWT, which is all route-guarding needs.
+// Built directly from the lightweight config (no providers) rather than
+// importing the full auth.ts, which pulls in bcrypt and the Prisma/Turso
+// driver adapter for its Credentials provider — none of that is needed
+// here, since route-guarding only ever needs to read/verify an existing
+// JWT. Keeps this function small and free of DB-touching dependencies
+// regardless of which runtime it deploys to.
 const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {

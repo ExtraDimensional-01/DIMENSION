@@ -28,7 +28,7 @@ export default async function EditBeatPage({
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold tracking-tight">Edit beat</h1>
       <p className="mt-1.5 mb-8 text-sm text-muted">Update your beat&apos;s details.</p>
-      <EditBeatForm beat={beat} />
+      <EditBeatForm beat={beat} r2Enabled={isR2Configured()} />
 
       <div className="mt-10 border-t border-border pt-8">
         <h2 className="text-lg font-semibold tracking-tight">License tiers</h2>
