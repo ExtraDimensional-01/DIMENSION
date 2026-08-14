@@ -214,6 +214,17 @@ export async function generateLicensePdf(params: LicensePdfParams): Promise<Uint
     snapshot.includedFormats.length > 0 ? snapshot.includedFormats.join(", ") : snapshot.fileFormat.toUpperCase()
   );
 
+  // Only appears when this tier actually allows distribution — driven by
+  // the producer's own configuration for the selected tier, not hardcoded
+  // onto every license.
+  if (snapshot.distributionAllowed) {
+    y -= 6;
+    drawParagraph(
+      `Distribution: Allowed on streaming and digital music platforms, including Spotify, Apple Music, YouTube Music, Amazon Music, TIDAL, Deezer, and other comparable services, subject to the applicable platform's rules and the limitations of this license. This permission applies to the Licensee's finished song incorporating the licensed instrumental — not to the instrumental itself, which remains owned by the Licensor. Any stream, sales/copy, commercial-use, or other limitation set above still applies regardless of which platform the finished song is distributed through. DIMENSION does not guarantee acceptance or approval by Spotify, Apple Music, YouTube, or any other platform; the Licensee is responsible for complying with each platform's own rules and requirements.`,
+      { size: 9, color: mutedColor, lineGap: 12 }
+    );
+  }
+
   y -= 4;
   drawRule();
 
