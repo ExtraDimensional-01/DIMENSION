@@ -253,14 +253,16 @@ export async function generateLicensePdf(params: LicensePdfParams): Promise<Uint
   y -= 10;
   ensureSpace(40);
   drawText(`Licensor: ${params.producerName}`, MARGIN, { font: bold, size: 10 });
+  y -= 13;
   drawText(`Confirmed receipt of payment on ${formatDate(params.purchaseDate)} — recorded via DIMENSION`, MARGIN, {
     font: regular,
     size: 8.5,
     color: mutedColor,
   });
-  y -= 28;
+  y -= 26;
   ensureSpace(40);
   drawText(`Licensee: ${params.buyerName}`, MARGIN, { font: bold, size: 10 });
+  y -= 13;
   drawText(`Accepted these license terms on ${formatDate(params.purchaseDate)} — recorded via DIMENSION`, MARGIN, {
     font: regular,
     size: 8.5,
