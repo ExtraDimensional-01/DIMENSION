@@ -6,12 +6,12 @@ import Image from "next/image";
 import { Loader2, Music2, UploadCloud } from "lucide-react";
 import { GENRES, MOODS, MUSICAL_KEYS, MAX_AUDIO_SIZE_BYTES, MAX_IMAGE_SIZE_BYTES } from "@/lib/constants";
 import { formatFileSize, formatDuration } from "@/lib/utils";
-import { getAudioDuration, getWaveformPeaks, uploadWithProgress } from "@/lib/upload-client";
+import { getAudioDuration, getWaveformPeaks, uploadWithProgress, uploadFileDirectToR2 } from "@/lib/upload-client";
 import { TagInput } from "@/components/dashboard/TagInput";
 import { Waveform } from "@/components/beats/Waveform";
 import { LicenseTierEditor, type DraftLicense } from "@/components/dashboard/LicenseTierEditor";
 
-export function UploadForm() {
+export function UploadForm({ r2Enabled }: { r2Enabled: boolean }) {
   const router = useRouter();
 
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -108,6 +108,103 @@ export function UploadForm() {
       }
     }
 
+    setSubmitting(true);
+    setProgress(0);
+
+    const licensePayload = licenses.map((l) => ({
+      name: l.name.trim(),
+      price: l.price.trim(),
+      terms: l.terms.trim(),
+      isExclusive: l.isExclusive,
+      includedFormats: l.includedFormats,
+      commercialUse: l.commercialUse,
+      distributionAllowed: l.distributionAllowed,
+      musicVideoAllowed: l.musicVideoAllowed,
+      performanceAllowed: l.performanceAllowed,
+      socialMediaAllowed: l.socialMediaAllowed,
+      streamLimit: l.streamLimit.trim(),
+      salesLimit: l.salesLimit.trim(),
+      creditRequired: l.creditRequired,
+      creditText: l.creditText.trim(),
+      otherRestrictions: l.otherRestrictions.trim(),
+    }));
+
+    if (r2Enabled) {
+      // Upload audio/cover/license files straight to R2, then send only the
+      // resulting object keys + metadata to the server — the file bytes
+      // never pass through our own backend.
+      try {
+        const beatId = crypto.randomUUID();
+        const files = [
+          { size: audioFile.size },
+          ...(coverFile ? [{ size: coverFile.size }] : []),
+          ...licenses.map((l) => ({ size: l.file!.size })),
+        ];
+        const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+        const uploaded = new Map<number, number>();
+        const reportProgress = (index: number, size: number, pct: number) => {
+          uploaded.set(index, (size * pct) / 100);
+          const sum = [...uploaded.values()].reduce((a, b) => a + b, 0);
+          setProgress(totalBytes > 0 ? Math.round((sum / totalBytes) * 100) : 0);
+        };
+
+        const audioUpload = await uploadFileDirectToR2(audioFile, "beat-audio", { beatId }, (pct) =>
+          reportProgress(0, audioFile.size, pct)
+        );
+
+        let coverUpload: { key: string } | null = null;
+        if (coverFile) {
+          coverUpload = await uploadFileDirectToR2(coverFile, "beat-cover", { beatId }, (pct) =>
+            reportProgress(1, coverFile.size, pct)
+          );
+        }
+
+        const licenseUploads: { key: string; size: number }[] = [];
+        for (let i = 0; i < licenses.length; i++) {
+          const file = licenses[i].file!;
+          const fileIndex = 1 + (coverFile ? 1 : 0) + i;
+          const result = await uploadFileDirectToR2(file, "beat-license", { beatId }, (pct) =>
+            reportProgress(fileIndex, file.size, pct)
+          );
+          licenseUploads.push({ key: result.key, size: file.size });
+        }
+
+        const res = await fetch("/api/beats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            beatId,
+            title: title.trim(),
+            bpm: Number(bpm),
+            key,
+            genre,
+            mood,
+            description: description.trim(),
+            tags,
+            durationSec: audioDuration,
+            waveformPeaks: waveformPeaks.length > 0 ? waveformPeaks : undefined,
+            audio: { key: audioUpload.key, size: audioFile.size },
+            cover: coverUpload ? { key: coverUpload.key, size: coverFile!.size } : null,
+            licenses: licensePayload.map((l, i) => ({ ...l, file: licenseUploads[i] })),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error ?? "Failed to upload beat");
+          setSubmitting(false);
+          return;
+        }
+        router.push(`/beats/${data.beat.id}`);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Upload failed. Check your connection and try again.");
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Legacy path: files stream through our own server (used when R2 isn't
+    // configured yet, e.g. local dev before Cloudflare setup).
     const formData = new FormData();
     formData.set("title", title.trim());
     formData.set("bpm", bpm);
@@ -121,35 +218,12 @@ export function UploadForm() {
     formData.set("audio", audioFile);
     if (coverFile) formData.set("cover", coverFile);
     if (licenses.length > 0) {
-      formData.set(
-        "licenses",
-        JSON.stringify(
-          licenses.map((l) => ({
-            name: l.name.trim(),
-            price: l.price.trim(),
-            terms: l.terms.trim(),
-            isExclusive: l.isExclusive,
-            includedFormats: l.includedFormats,
-            commercialUse: l.commercialUse,
-            distributionAllowed: l.distributionAllowed,
-            musicVideoAllowed: l.musicVideoAllowed,
-            performanceAllowed: l.performanceAllowed,
-            socialMediaAllowed: l.socialMediaAllowed,
-            streamLimit: l.streamLimit.trim(),
-            salesLimit: l.salesLimit.trim(),
-            creditRequired: l.creditRequired,
-            creditText: l.creditText.trim(),
-            otherRestrictions: l.otherRestrictions.trim(),
-          }))
-        )
-      );
+      formData.set("licenses", JSON.stringify(licensePayload));
       for (const license of licenses) {
         formData.append("licenseFiles", license.file!);
       }
     }
 
-    setSubmitting(true);
-    setProgress(0);
     try {
       const { ok, data } = await uploadWithProgress("/api/beats", "POST", formData, setProgress);
       if (!ok) {

@@ -16,7 +16,13 @@ import { ProjectReviews } from "@/components/collabs/ProjectReviews";
 const TABS = ["Messages", "Files", "Tasks", "Details"] as const;
 type Tab = (typeof TABS)[number];
 
-export function CollabProjectWorkspace({ project: initialProject }: { project: CollabProject }) {
+export function CollabProjectWorkspace({
+  project: initialProject,
+  r2Enabled,
+}: {
+  project: CollabProject;
+  r2Enabled: boolean;
+}) {
   const router = useRouter();
   const { data: session } = useSession();
   const [project, setProject] = useState(initialProject);
@@ -122,8 +128,8 @@ export function CollabProjectWorkspace({ project: initialProject }: { project: C
         ))}
       </div>
 
-      {tab === "Messages" && <CollabMessageThread projectId={project.id} />}
-      {tab === "Files" && <CollabProjectFiles projectId={project.id} />}
+      {tab === "Messages" && <CollabMessageThread projectId={project.id} r2Enabled={r2Enabled} />}
+      {tab === "Files" && <CollabProjectFiles projectId={project.id} r2Enabled={r2Enabled} />}
       {tab === "Tasks" && <CollabTaskList projectId={project.id} participants={project.participants} />}
       {tab === "Details" && (
         <div className="flex flex-col gap-6">

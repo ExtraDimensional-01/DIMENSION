@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { storage } from "@/lib/storage";
+import { storage, headObjectMeta } from "@/lib/storage";
 import { ALLOWED_PROJECT_FILE_TYPES, MAX_PROJECT_FILE_SIZE_BYTES } from "@/lib/constants";
 
 interface ParentRefs {
@@ -77,7 +77,7 @@ interface SaveCollabFileParams extends ParentRefs {
   uploaderId: string;
 }
 
-/** Validates, stores on disk, and persists a CollaborationFile row for an uploaded file. */
+/** Validates, stores on disk (or R2), and persists a CollaborationFile row for an uploaded file. */
 export async function saveCollabFile({
   file,
   uploaderId,
@@ -112,6 +112,63 @@ export async function saveCollabFile({
       fileName: file.name,
       fileType: ext,
       fileSize: file.size,
+      uploaderId,
+      postId: postId ?? undefined,
+      applicationId: applicationId ?? undefined,
+      projectId: projectId ?? undefined,
+      messageId: messageId ?? undefined,
+    },
+  });
+}
+
+interface SaveUploadedCollabFileParams extends ParentRefs {
+  key: string;
+  filename: string;
+  uploaderId: string;
+  /** The projectId the key was presigned under — required so we can verify the key wasn't forged to point at another project's files. */
+  expectedProjectId: string;
+}
+
+/**
+ * Same as saveCollabFile, but for a file already uploaded directly to R2 via
+ * a presigned URL (see /api/uploads/presign, category "collab-project-file").
+ * Re-verifies the object actually exists in R2 (and belongs to the claimed
+ * project) before trusting the client-reported key.
+ */
+export async function saveUploadedCollabFile({
+  key,
+  filename,
+  uploaderId,
+  expectedProjectId,
+  postId,
+  applicationId,
+  projectId,
+  messageId,
+}: SaveUploadedCollabFileParams) {
+  assertExactlyOneParent({ postId, applicationId, projectId, messageId });
+
+  if (!key.startsWith(`collabs/project/${expectedProjectId}/`)) {
+    throw new Error("Invalid file upload");
+  }
+  const ext = key.split(".").pop()?.toLowerCase() ?? "";
+  const validExts = new Set(Object.values(ALLOWED_PROJECT_FILE_TYPES));
+  if (!validExts.has(ext)) {
+    throw new Error("Unsupported file type");
+  }
+  const meta = await headObjectMeta(key);
+  if (!meta) {
+    throw new Error("Upload not found — please re-upload and try again");
+  }
+  if (meta.size > MAX_PROJECT_FILE_SIZE_BYTES) {
+    throw new Error(`File must be under ${Math.round(MAX_PROJECT_FILE_SIZE_BYTES / 1024 / 1024)}MB`);
+  }
+
+  return db.collaborationFile.create({
+    data: {
+      fileKey: key,
+      fileName: filename,
+      fileType: ext,
+      fileSize: meta.size,
       uploaderId,
       postId: postId ?? undefined,
       applicationId: applicationId ?? undefined,

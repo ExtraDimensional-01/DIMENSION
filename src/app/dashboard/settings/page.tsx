@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fileUrl } from "@/lib/storage";
 import { ProfileForm } from "@/components/dashboard/ProfileForm";
+import { DeleteAccountSection } from "@/components/dashboard/DeleteAccountSection";
 import { CreatorProfileForm } from "@/components/collabs/CreatorProfileForm";
 import { serializeCreatorProfile } from "@/lib/collab-serialize";
 import { creatorProfileInclude } from "@/lib/creator-query";
@@ -37,6 +38,10 @@ export default async function SettingsPage() {
           Powers your Collabs presence — the roles, genres, and skills other creators use to find you.
         </p>
         <CreatorProfileForm initial={creatorProfile ? serializeCreatorProfile(creatorProfile) : null} />
+      </div>
+
+      <div className="mt-12 border-t border-border pt-8">
+        <DeleteAccountSection />
       </div>
     </div>
   );

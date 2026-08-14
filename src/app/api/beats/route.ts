@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
-import { storage } from "@/lib/storage";
+import {
+  storage,
+  isR2Configured,
+  headObjectMeta,
+  beatAudioKey,
+  beatCoverKey,
+  beatLicenseKey,
+} from "@/lib/storage";
 import { beatMetadataSchema, beatLicenseFieldsSchema } from "@/lib/validations";
 import { serializeBeatSummary } from "@/lib/serialize";
 import { getUnlockedBeatIds } from "@/lib/orders";
@@ -84,6 +91,14 @@ export async function POST(req: Request) {
       { error: "Only producer accounts can upload beats." },
       { status: 403 }
     );
+  }
+
+  // R2 mode: the client already uploaded audio/cover/license files directly
+  // to R2 via presigned URLs (see /api/uploads/presign) and is now just
+  // reporting back the object keys as JSON, to be verified and persisted.
+  const contentType = req.headers.get("content-type") ?? "";
+  if (isR2Configured() && contentType.includes("application/json")) {
+    return postFromUploadedKeys(req, session.user.id);
   }
 
   let formData: FormData;
@@ -358,6 +373,271 @@ export async function POST(req: Request) {
           fileKey,
           fileFormat: licenseExt,
           fileSize: pl.file.size,
+          sortOrder: i,
+        },
+      });
+    }
+    beat = (await db.beat.findUnique({ where: { id: beat.id }, include: beatInclude }))!;
+  }
+
+  return NextResponse.json({ beat: serializeBeatSummary(beat) }, { status: 201 });
+}
+
+interface UploadedFileRef {
+  key: string;
+  size: number;
+}
+
+interface PresignedLicenseInput {
+  name: string;
+  price: string;
+  terms: string;
+  isExclusive: boolean;
+  includedFormats: string[];
+  commercialUse: boolean;
+  distributionAllowed: boolean;
+  musicVideoAllowed: boolean;
+  performanceAllowed: boolean;
+  socialMediaAllowed: boolean;
+  streamLimit: string;
+  salesLimit: string;
+  creditRequired: boolean;
+  creditText: string;
+  otherRestrictions: string;
+  file: UploadedFileRef;
+}
+
+interface PresignedBeatBody {
+  beatId: string;
+  title: string;
+  bpm: number;
+  key: string;
+  genre: string;
+  mood?: string;
+  description?: string;
+  tags?: string[];
+  durationSec?: number | null;
+  waveformPeaks?: number[];
+  audio: UploadedFileRef;
+  cover?: UploadedFileRef | null;
+  licenses?: PresignedLicenseInput[];
+}
+
+/** Extracts and validates the extension off a key like "beats/u1/b1/preview.wav", against an allowed-extension set. */
+function extFromKey(key: string): string {
+  return key.split(".").pop()?.toLowerCase() ?? "";
+}
+
+/**
+ * Finalizes a beat whose audio/cover/license files were already uploaded
+ * directly to R2 via presigned URLs. Every reported key is re-verified here
+ * — reconstructed from (userId, beatId, extension) and compared for an
+ * exact match, then confirmed to actually exist in R2 (HeadObject) with a
+ * size within limits — so a client can't report an arbitrary or someone
+ * else's object key and have it accepted.
+ */
+async function postFromUploadedKeys(req: Request, userId: string): Promise<NextResponse> {
+  let body: PresignedBeatBody;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  const parsed = beatMetadataSchema.safeParse({
+    title: body.title,
+    bpm: body.bpm,
+    key: body.key,
+    genre: body.genre,
+    mood: body.mood ?? "",
+    description: body.description ?? "",
+    tags: body.tags ?? [],
+  });
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
+  }
+
+  const beatId = body.beatId;
+  if (typeof beatId !== "string" || !beatId) {
+    return NextResponse.json({ error: "Missing beatId" }, { status: 400 });
+  }
+  const alreadyExists = await db.beat.findUnique({ where: { id: beatId }, select: { id: true } });
+  if (alreadyExists) {
+    return NextResponse.json({ error: "This beat has already been created" }, { status: 400 });
+  }
+
+  // --- Verify the audio object ---
+  if (!body.audio?.key) {
+    return NextResponse.json({ error: "An audio file is required" }, { status: 400 });
+  }
+  const audioExt = extFromKey(body.audio.key);
+  if (!Object.values(ALLOWED_AUDIO_TYPES).includes(audioExt) || body.audio.key !== beatAudioKey(userId, beatId, audioExt)) {
+    return NextResponse.json({ error: "Invalid audio upload" }, { status: 400 });
+  }
+  const audioMeta = await headObjectMeta(body.audio.key);
+  if (!audioMeta) {
+    return NextResponse.json({ error: "Audio upload not found — please re-upload and try again" }, { status: 400 });
+  }
+  if (audioMeta.size > MAX_AUDIO_SIZE_BYTES) {
+    return NextResponse.json(
+      { error: `Audio file must be under ${Math.round(MAX_AUDIO_SIZE_BYTES / 1024 / 1024)}MB` },
+      { status: 400 }
+    );
+  }
+
+  // --- Verify the cover object, if provided ---
+  let coverKey: string | null = null;
+  if (body.cover?.key) {
+    const coverExt = extFromKey(body.cover.key);
+    if (!Object.values(ALLOWED_IMAGE_TYPES).includes(coverExt) || body.cover.key !== beatCoverKey(userId, beatId, coverExt)) {
+      return NextResponse.json({ error: "Invalid cover upload" }, { status: 400 });
+    }
+    const coverMeta = await headObjectMeta(body.cover.key);
+    if (!coverMeta) {
+      return NextResponse.json({ error: "Cover upload not found — please re-upload and try again" }, { status: 400 });
+    }
+    if (coverMeta.size > MAX_IMAGE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `Cover artwork must be under ${Math.round(MAX_IMAGE_SIZE_BYTES / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
+    coverKey = body.cover.key;
+  }
+
+  // --- Verify each license tier's deliverable object ---
+  const licenseInputs = body.licenses ?? [];
+  const verifiedLicenses: {
+    data: ReturnType<typeof beatLicenseFieldsSchema.parse>;
+    priceCents: number;
+    fileKey: string;
+    fileFormat: string;
+    fileSize: number;
+  }[] = [];
+
+  for (let i = 0; i < licenseInputs.length; i++) {
+    const li = licenseInputs[i];
+    if (!li.file?.key) {
+      return NextResponse.json({ error: `License tier ${i + 1} is missing a file` }, { status: 400 });
+    }
+    const ext = extFromKey(li.file.key);
+    if (!Object.values(ALLOWED_LICENSE_FILE_TYPES).includes(ext) || !li.file.key.startsWith(`beats/${userId}/${beatId}/licenses/`)) {
+      return NextResponse.json({ error: `License tier ${i + 1}: invalid file upload` }, { status: 400 });
+    }
+    const meta = await headObjectMeta(li.file.key);
+    if (!meta) {
+      return NextResponse.json(
+        { error: `License tier ${i + 1}: upload not found — please re-upload and try again` },
+        { status: 400 }
+      );
+    }
+    if (meta.size > MAX_LICENSE_FILE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `License tier ${i + 1}: file must be under ${Math.round(MAX_LICENSE_FILE_SIZE_BYTES / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
+    const dollars = Number(li.price);
+    if (Number.isNaN(dollars) || dollars < 0) {
+      return NextResponse.json({ error: `License tier ${i + 1}: enter a valid price` }, { status: 400 });
+    }
+    const toNullableInt = (v: string): number | null => {
+      if (typeof v !== "string" || v.trim() === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    };
+    const structuredParsed = beatLicenseFieldsSchema.safeParse({
+      name: li.name,
+      terms: li.terms,
+      isExclusive: li.isExclusive,
+      includedFormats: Array.isArray(li.includedFormats) ? li.includedFormats : [],
+      commercialUse: li.commercialUse,
+      distributionAllowed: li.distributionAllowed,
+      musicVideoAllowed: li.musicVideoAllowed,
+      performanceAllowed: li.performanceAllowed,
+      socialMediaAllowed: li.socialMediaAllowed,
+      streamLimit: toNullableInt(li.streamLimit),
+      salesLimit: toNullableInt(li.salesLimit),
+      creditRequired: li.creditRequired,
+      creditText: li.creditText,
+      otherRestrictions: li.otherRestrictions,
+    });
+    if (!structuredParsed.success) {
+      return NextResponse.json(
+        { error: `License tier ${i + 1}: ${structuredParsed.error.issues[0]?.message ?? "invalid input"}` },
+        { status: 400 }
+      );
+    }
+    verifiedLicenses.push({
+      data: structuredParsed.data,
+      priceCents: Math.round(dollars * 100),
+      fileKey: li.file.key,
+      fileFormat: ext,
+      fileSize: meta.size,
+    });
+  }
+
+  const durationSec =
+    typeof body.durationSec === "number" && Number.isFinite(body.durationSec) ? body.durationSec : null;
+
+  let waveformPeaks: string | null = null;
+  if (Array.isArray(body.waveformPeaks) && body.waveformPeaks.every((n) => typeof n === "number" && Number.isFinite(n))) {
+    waveformPeaks = JSON.stringify(body.waveformPeaks.map((n) => Math.max(0, Math.min(1, n))));
+  }
+
+  const normalizedTags = Array.from(
+    new Set(parsed.data.tags.map((t) => t.trim().toLowerCase()).filter(Boolean))
+  );
+
+  let beat = await db.beat.create({
+    data: {
+      id: beatId,
+      title: parsed.data.title,
+      bpm: parsed.data.bpm,
+      key: parsed.data.key,
+      genre: parsed.data.genre,
+      mood: parsed.data.mood || null,
+      description: parsed.data.description,
+      audioKey: body.audio.key,
+      audioFormat: audioExt,
+      audioSize: audioMeta.size,
+      durationSec,
+      waveformPeaks,
+      coverKey,
+      producerId: userId,
+      tags: {
+        create: normalizedTags.map((name: string) => ({
+          tag: { connectOrCreate: { where: { name }, create: { name } } },
+        })),
+      },
+    },
+    include: beatInclude,
+  });
+
+  if (verifiedLicenses.length > 0) {
+    for (let i = 0; i < verifiedLicenses.length; i++) {
+      const vl = verifiedLicenses[i];
+      await db.beatLicense.create({
+        data: {
+          beatId: beat.id,
+          name: vl.data.name,
+          priceCents: vl.priceCents,
+          terms: vl.data.terms,
+          isExclusive: vl.data.isExclusive,
+          includedFormats: JSON.stringify(vl.data.includedFormats),
+          commercialUse: vl.data.commercialUse,
+          distributionAllowed: vl.data.distributionAllowed,
+          musicVideoAllowed: vl.data.musicVideoAllowed,
+          performanceAllowed: vl.data.performanceAllowed,
+          socialMediaAllowed: vl.data.socialMediaAllowed,
+          streamLimit: vl.data.streamLimit ?? null,
+          salesLimit: vl.data.salesLimit ?? null,
+          creditRequired: vl.data.creditRequired,
+          creditText: vl.data.creditText,
+          otherRestrictions: vl.data.otherRestrictions,
+          fileKey: vl.fileKey,
+          fileFormat: vl.fileFormat,
+          fileSize: vl.fileSize,
           sortOrder: i,
         },
       });

@@ -7,8 +7,9 @@ import { Loader2, Paperclip, Send, X } from "lucide-react";
 import type { CollabMessage } from "@/types";
 import { initials, formatRelativeDate, cn } from "@/lib/utils";
 import { CollabFileList } from "@/components/collabs/CollabFileList";
+import { uploadFileDirectToR2 } from "@/lib/upload-client";
 
-export function CollabMessageThread({ projectId }: { projectId: string }) {
+export function CollabMessageThread({ projectId, r2Enabled }: { projectId: string; r2Enabled: boolean }) {
   const { data: session } = useSession();
   const [messages, setMessages] = useState<CollabMessage[] | null>(null);
   const [draft, setDraft] = useState("");
@@ -50,12 +51,26 @@ export function CollabMessageThread({ projectId }: { projectId: string }) {
     setSending(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.set("body", body);
-    if (attachment) formData.set("attachment", attachment);
-
     try {
-      const res = await fetch(`/api/collab-projects/${projectId}/messages`, { method: "POST", body: formData });
+      let res: Response;
+      if (r2Enabled) {
+        let uploadedAttachment: { key: string; filename: string } | undefined;
+        if (attachment) {
+          const uploaded = await uploadFileDirectToR2(attachment, "collab-project-file", { projectId });
+          uploadedAttachment = { key: uploaded.key, filename: attachment.name };
+        }
+        res = await fetch(`/api/collab-projects/${projectId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ body, attachment: uploadedAttachment }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("body", body);
+        if (attachment) formData.set("attachment", attachment);
+        res = await fetch(`/api/collab-projects/${projectId}/messages`, { method: "POST", body: formData });
+      }
+
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Failed to send message");
@@ -64,8 +79,8 @@ export function CollabMessageThread({ projectId }: { projectId: string }) {
       setMessages((prev) => [...(prev ?? []), data.message]);
       setDraft("");
       setAttachment(null);
-    } catch {
-      setError("Something went wrong. Check your connection and try again.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Check your connection and try again.");
     } finally {
       setSending(false);
     }

@@ -44,8 +44,8 @@ export default async function Home({
       take: 5,
     }),
     db.beat.count({ where: { isPublic: true } }),
-    db.user.count({ where: { role: "producer" } }),
-    db.user.count(),
+    db.user.count({ where: { role: "producer", deletedAt: null } }),
+    db.user.count({ where: { deletedAt: null } }),
   ]);
 
   const unlockedIds = await getUnlockedBeatIds(
@@ -138,7 +138,6 @@ export default async function Home({
                     <div>
                       <p className="font-display text-lg font-bold leading-none text-foreground">
                         {s.value}
-                        <span className="text-accent">+</span>
                       </p>
                       <p className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-2">{s.label}</p>
                     </div>

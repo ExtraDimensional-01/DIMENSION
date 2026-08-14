@@ -22,7 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const user = await db.user.findUnique({
           where: { email: parsed.data.email },
         });
-        if (!user) return null;
+        if (!user || user.deletedAt) return null;
 
         const isValid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!isValid) return null;

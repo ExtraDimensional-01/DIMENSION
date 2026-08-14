@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { serializeProject } from "@/lib/collab-serialize";
+import { isR2Configured } from "@/lib/storage";
 import { CollabProjectWorkspace } from "@/components/collabs/CollabProjectWorkspace";
 
 const projectInclude = {
@@ -35,7 +36,7 @@ export default async function CollabProjectPage({ params }: { params: Promise<{ 
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-      <CollabProjectWorkspace project={serializeProject(projectRecord)} />
+      <CollabProjectWorkspace project={serializeProject(projectRecord)} r2Enabled={isR2Configured()} />
     </div>
   );
 }

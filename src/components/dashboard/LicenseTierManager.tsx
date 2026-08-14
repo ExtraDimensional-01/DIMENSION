@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Loader2, Music2, Trash2 } from "lucide-react";
 import { LICENSE_PRESETS } from "@/lib/constants";
 import { formatFileSize } from "@/lib/utils";
+import { uploadFileDirectToR2 } from "@/lib/upload-client";
 import {
   LicenseTierEditor,
   LicenseFieldsBody,
@@ -64,14 +65,44 @@ function appendLicenseFields(
   formData.set("otherRestrictions", fields.otherRestrictions.trim());
 }
 
+function licenseFieldsToJson(fields: {
+  includedFormats: string[];
+  commercialUse: boolean;
+  distributionAllowed: boolean;
+  musicVideoAllowed: boolean;
+  performanceAllowed: boolean;
+  socialMediaAllowed: boolean;
+  streamLimitStr: string;
+  salesLimitStr: string;
+  creditRequired: boolean;
+  creditText: string;
+  otherRestrictions: string;
+}) {
+  return {
+    includedFormats: fields.includedFormats,
+    commercialUse: fields.commercialUse,
+    distributionAllowed: fields.distributionAllowed,
+    musicVideoAllowed: fields.musicVideoAllowed,
+    performanceAllowed: fields.performanceAllowed,
+    socialMediaAllowed: fields.socialMediaAllowed,
+    streamLimit: fields.streamLimitStr.trim(),
+    salesLimit: fields.salesLimitStr.trim(),
+    creditRequired: fields.creditRequired,
+    creditText: fields.creditText.trim(),
+    otherRestrictions: fields.otherRestrictions.trim(),
+  };
+}
+
 export function LicenseTierManager({
   beatId,
   initialLicenses,
   exclusiveSoldAt,
+  r2Enabled,
 }: {
   beatId: string;
   initialLicenses: BeatLicenseInfo[];
   exclusiveSoldAt: string | null;
+  r2Enabled: boolean;
 }) {
   const [licenses, setLicenses] = useState<EditableLicense[]>(initialLicenses.map(toEditable));
   const [draft, setDraft] = useState<DraftLicense[]>([]);
@@ -93,17 +124,39 @@ export function LicenseTierManager({
     }
     patch(license.id, { saving: true, error: null });
 
-    const formData = new FormData();
-    formData.set("name", license.name.trim());
-    formData.set("price", license.price.trim());
-    formData.set("terms", license.terms.trim());
-    formData.set("isExclusive", String(license.isExclusive));
-    formData.set("isActive", String(license.isActive));
-    appendLicenseFields(formData, license);
-    if (license.newFile) formData.set("file", license.newFile);
-
     try {
-      const res = await fetch(`/api/beat-licenses/${license.id}`, { method: "PATCH", body: formData });
+      let res: Response;
+      if (r2Enabled) {
+        let file: { key: string; size: number } | undefined;
+        if (license.newFile) {
+          const uploaded = await uploadFileDirectToR2(license.newFile, "beat-license", { beatId });
+          file = { key: uploaded.key, size: license.newFile.size };
+        }
+        res = await fetch(`/api/beat-licenses/${license.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: license.name.trim(),
+            price: license.price.trim(),
+            terms: license.terms.trim(),
+            isExclusive: license.isExclusive,
+            isActive: license.isActive,
+            ...licenseFieldsToJson(license),
+            ...(file ? { file } : {}),
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("name", license.name.trim());
+        formData.set("price", license.price.trim());
+        formData.set("terms", license.terms.trim());
+        formData.set("isExclusive", String(license.isExclusive));
+        formData.set("isActive", String(license.isActive));
+        appendLicenseFields(formData, license);
+        if (license.newFile) formData.set("file", license.newFile);
+        res = await fetch(`/api/beat-licenses/${license.id}`, { method: "PATCH", body: formData });
+      }
+
       const data = await res.json();
       if (!res.ok) {
         patch(license.id, { saving: false, error: data.error ?? "Failed to save" });
@@ -117,8 +170,8 @@ export function LicenseTierManager({
         fileSize: data.license.fileSize,
         priceCents: data.license.priceCents,
       });
-    } catch {
-      patch(license.id, { saving: false, error: "Something went wrong. Try again." });
+    } catch (err) {
+      patch(license.id, { saving: false, error: err instanceof Error ? err.message : "Something went wrong. Try again." });
     }
   }
 
@@ -155,21 +208,43 @@ export function LicenseTierManager({
     setAddError(null);
     setAdding(true);
 
-    const formData = new FormData();
-    formData.set("beatId", beatId);
-    formData.set("name", pending.name.trim());
-    formData.set("price", pending.price.trim());
-    formData.set("terms", pending.terms.trim());
-    formData.set("isExclusive", String(pending.isExclusive));
-    formData.set("file", pending.file);
-    appendLicenseFields(formData, {
-      ...pending,
-      streamLimitStr: pending.streamLimit,
-      salesLimitStr: pending.salesLimit,
-    });
-
     try {
-      const res = await fetch("/api/beat-licenses", { method: "POST", body: formData });
+      let res: Response;
+      if (r2Enabled) {
+        const uploaded = await uploadFileDirectToR2(pending.file, "beat-license", { beatId });
+        res = await fetch("/api/beat-licenses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            beatId,
+            name: pending.name.trim(),
+            price: pending.price.trim(),
+            terms: pending.terms.trim(),
+            isExclusive: pending.isExclusive,
+            ...licenseFieldsToJson({
+              ...pending,
+              streamLimitStr: pending.streamLimit,
+              salesLimitStr: pending.salesLimit,
+            }),
+            file: { key: uploaded.key, size: pending.file.size },
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("beatId", beatId);
+        formData.set("name", pending.name.trim());
+        formData.set("price", pending.price.trim());
+        formData.set("terms", pending.terms.trim());
+        formData.set("isExclusive", String(pending.isExclusive));
+        formData.set("file", pending.file);
+        appendLicenseFields(formData, {
+          ...pending,
+          streamLimitStr: pending.streamLimit,
+          salesLimitStr: pending.salesLimit,
+        });
+        res = await fetch("/api/beat-licenses", { method: "POST", body: formData });
+      }
+
       const data = await res.json();
       if (!res.ok) {
         setAddError(data.error ?? "Failed to add license");
@@ -179,8 +254,8 @@ export function LicenseTierManager({
       setLicenses((prev) => [...prev, toEditable(data.license)]);
       setDraft([]);
       setAdding(false);
-    } catch {
-      setAddError("Something went wrong. Try again.");
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Something went wrong. Try again.");
       setAdding(false);
     }
   }

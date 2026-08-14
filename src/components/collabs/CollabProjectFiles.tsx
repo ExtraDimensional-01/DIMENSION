@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, UploadCloud } from "lucide-react";
 import type { CollabFile } from "@/types";
 import { CollabFileList } from "@/components/collabs/CollabFileList";
+import { uploadFileDirectToR2 } from "@/lib/upload-client";
 
-export function CollabProjectFiles({ projectId }: { projectId: string }) {
+export function CollabProjectFiles({ projectId, r2Enabled }: { projectId: string; r2Enabled: boolean }) {
   const [files, setFiles] = useState<CollabFile[] | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,16 +26,28 @@ export function CollabProjectFiles({ projectId }: { projectId: string }) {
   async function handleUpload(file: File) {
     setUploading(true);
     setError(null);
-    const formData = new FormData();
-    formData.set("file", file);
     try {
-      const res = await fetch(`/api/collab-projects/${projectId}/files`, { method: "POST", body: formData });
+      let res: Response;
+      if (r2Enabled) {
+        const uploaded = await uploadFileDirectToR2(file, "collab-project-file", { projectId });
+        res = await fetch(`/api/collab-projects/${projectId}/files`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: uploaded.key, filename: file.name }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("file", file);
+        res = await fetch(`/api/collab-projects/${projectId}/files`, { method: "POST", body: formData });
+      }
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Upload failed");
         return;
       }
       setFiles((prev) => [data.file, ...(prev ?? [])]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }

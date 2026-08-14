@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { beatInclude } from "@/lib/beat-query";
 import { serializeBeat } from "@/lib/serialize";
+import { isR2Configured } from "@/lib/storage";
 import { EditBeatForm } from "@/components/dashboard/EditBeatForm";
 import { LicenseTierManager } from "@/components/dashboard/LicenseTierManager";
 
@@ -38,6 +39,7 @@ export default async function EditBeatPage({
           beatId={beat.id}
           initialLicenses={beat.licenses}
           exclusiveSoldAt={beat.exclusiveSoldAt}
+          r2Enabled={isR2Configured()}
         />
       </div>
     </div>

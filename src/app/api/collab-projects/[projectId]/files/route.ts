@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { isProjectParticipant } from "@/lib/collab-workflow";
 import { serializeCollabFile } from "@/lib/collab-serialize";
-import { saveCollabFile } from "@/lib/collab-files";
+import { saveCollabFile, saveUploadedCollabFile } from "@/lib/collab-files";
+import { isR2Configured } from "@/lib/storage";
 import { createNotification } from "@/lib/notify";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
@@ -34,23 +35,44 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     return NextResponse.json({ error: "You don't have access to this project" }, { status: 403 });
   }
 
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
-  }
-
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "A file is required" }, { status: 400 });
-  }
-
+  const contentType = req.headers.get("content-type") ?? "";
   let saved;
-  try {
-    saved = await saveCollabFile({ file, uploaderId: session.user.id, projectId });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Upload failed" }, { status: 400 });
+
+  if (isR2Configured() && contentType.includes("application/json")) {
+    const body = await req.json().catch(() => ({}));
+    const { key, filename } = body as { key?: string; filename?: string };
+    if (typeof key !== "string" || typeof filename !== "string") {
+      return NextResponse.json({ error: "Missing file" }, { status: 400 });
+    }
+    try {
+      saved = await saveUploadedCollabFile({
+        key,
+        filename,
+        uploaderId: session.user.id,
+        expectedProjectId: projectId,
+        projectId,
+      });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Upload failed" }, { status: 400 });
+    }
+  } else {
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+    }
+
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: "A file is required" }, { status: 400 });
+    }
+
+    try {
+      saved = await saveCollabFile({ file, uploaderId: session.user.id, projectId });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Upload failed" }, { status: 400 });
+    }
   }
 
   const otherParticipants = await db.collaborationParticipant.findMany({

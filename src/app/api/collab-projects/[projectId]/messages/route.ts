@@ -4,7 +4,8 @@ import { auth } from "@/lib/auth";
 import { isProjectParticipant } from "@/lib/collab-workflow";
 import { collabMessageSchema } from "@/lib/collab-validations";
 import { serializeMessage } from "@/lib/collab-serialize";
-import { saveCollabFile } from "@/lib/collab-files";
+import { saveCollabFile, saveUploadedCollabFile } from "@/lib/collab-files";
+import { isR2Configured } from "@/lib/storage";
 import { createNotification } from "@/lib/notify";
 
 const messageInclude = {
@@ -47,30 +48,66 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     return NextResponse.json({ error: "You don't have access to this project" }, { status: 403 });
   }
 
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
-  }
+  const contentType = req.headers.get("content-type") ?? "";
+  const isJson = isR2Configured() && contentType.includes("application/json");
 
-  const parsed = collabMessageSchema.safeParse({ body: formData.get("body") ?? "" });
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid message" }, { status: 400 });
-  }
+  let body = "";
+  let legacyAttachment: File | null = null;
+  let uploadedAttachment: { key: string; filename: string } | null = null;
 
-  const attachment = formData.get("attachment");
-  if (!parsed.data.body && !(attachment instanceof File && attachment.size > 0)) {
-    return NextResponse.json({ error: "Message must have text or an attachment" }, { status: 400 });
+  if (isJson) {
+    const json = await req.json().catch(() => ({}));
+    const parsed = collabMessageSchema.safeParse({ body: json.body ?? "" });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid message" }, { status: 400 });
+    }
+    body = parsed.data.body;
+    if (json.attachment?.key && typeof json.attachment.filename === "string") {
+      uploadedAttachment = { key: json.attachment.key, filename: json.attachment.filename };
+    }
+    if (!body && !uploadedAttachment) {
+      return NextResponse.json({ error: "Message must have text or an attachment" }, { status: 400 });
+    }
+  } else {
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+    }
+
+    const parsed = collabMessageSchema.safeParse({ body: formData.get("body") ?? "" });
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid message" }, { status: 400 });
+    }
+    body = parsed.data.body;
+
+    const attachment = formData.get("attachment");
+    if (!body && !(attachment instanceof File && attachment.size > 0)) {
+      return NextResponse.json({ error: "Message must have text or an attachment" }, { status: 400 });
+    }
+    if (attachment instanceof File && attachment.size > 0) legacyAttachment = attachment;
   }
 
   const message = await db.collaborationMessage.create({
-    data: { projectId, senderId: session.user.id, body: parsed.data.body },
+    data: { projectId, senderId: session.user.id, body },
   });
 
-  if (attachment instanceof File && attachment.size > 0) {
+  if (legacyAttachment) {
     try {
-      await saveCollabFile({ file: attachment, uploaderId: session.user.id, messageId: message.id });
+      await saveCollabFile({ file: legacyAttachment, uploaderId: session.user.id, messageId: message.id });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to attach file" }, { status: 400 });
+    }
+  } else if (uploadedAttachment) {
+    try {
+      await saveUploadedCollabFile({
+        key: uploadedAttachment.key,
+        filename: uploadedAttachment.filename,
+        uploaderId: session.user.id,
+        expectedProjectId: projectId,
+        messageId: message.id,
+      });
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to attach file" }, { status: 400 });
     }
