@@ -247,7 +247,7 @@ export async function generateLicensePdf(params: LicensePdfParams): Promise<Uint
   drawRule();
   drawSectionHeading("Acceptance");
   drawParagraph(
-    `This license is granted directly by the Licensor to the Licensee — the Producer and the Buyer are the parties to this agreement. The Licensee reviewed and accepted the terms described above before this order was placed. The Licensor then confirmed that payment was received directly from the Licensee. DIMENSION recorded that confirmation and generated this document based on the terms set by the Licensor and accepted by the Licensee; DIMENSION is not a party to this license agreement.`,
+    `This license is granted directly by the Licensor to the Licensee — the Producer and the Buyer are the parties to this agreement. The Licensee reviewed and accepted the terms described above before accepting this license. The Licensor then confirmed that payment was received directly from the Licensee. DIMENSION recorded that confirmation and generated this document based on the terms set by the Licensor and accepted by the Licensee; DIMENSION is not a party to this license agreement.`,
     { lineGap: 14 }
   );
   y -= 10;
