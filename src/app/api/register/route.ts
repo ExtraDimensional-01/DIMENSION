@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { signupSchema } from "@/lib/validations";
 
@@ -28,11 +29,23 @@ export async function POST(req: Request) {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const producerNameLower = producerName.toLowerCase();
 
-  const user = await db.user.create({
-    data: { email, passwordHash, producerName, role },
-    select: { id: true, email: true, producerName: true, role: true },
-  });
+  let user;
+  try {
+    user = await db.user.create({
+      data: { email, passwordHash, producerName, producerNameLower, role },
+      select: { id: true, email: true, producerName: true, role: true },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json(
+        { error: "That producer name is already taken" },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json({ user }, { status: 201 });
 }

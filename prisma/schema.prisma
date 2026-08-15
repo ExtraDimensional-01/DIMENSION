@@ -14,6 +14,10 @@ model User {
   email         String   @unique
   passwordHash  String
   producerName  String
+  // Lowercased copy of producerName, kept in sync on every write. SQLite's
+  // default unique index is case-sensitive, so this is what actually
+  // enforces "names differing only by case are still a collision".
+  producerNameLower String @unique
   role          String   @default("producer") // "producer" | "viewer" — plain string since SQLite has no native enum support in Prisma
   bio           String   @default("")
   profileImage  String? // storage key for profile picture

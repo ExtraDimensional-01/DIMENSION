@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { storage } from "@/lib/storage";
@@ -93,16 +94,25 @@ export async function PATCH(req: Request) {
     newBannerKey = null;
   }
 
-  const user = await db.user.update({
-    where: { id: session.user.id },
-    data: {
-      producerName: parsed.data.producerName,
-      bio: parsed.data.bio,
-      ...(newAvatarKey ? { profileImage: newAvatarKey } : {}),
-      ...(newBannerKey !== undefined ? { bannerImage: newBannerKey } : {}),
-    },
-    select: { id: true, producerName: true, bio: true, profileImage: true, bannerImage: true, email: true },
-  });
+  let user;
+  try {
+    user = await db.user.update({
+      where: { id: session.user.id },
+      data: {
+        producerName: parsed.data.producerName,
+        producerNameLower: parsed.data.producerName.toLowerCase(),
+        bio: parsed.data.bio,
+        ...(newAvatarKey ? { profileImage: newAvatarKey } : {}),
+        ...(newBannerKey !== undefined ? { bannerImage: newBannerKey } : {}),
+      },
+      select: { id: true, producerName: true, bio: true, profileImage: true, bannerImage: true, email: true },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json({ error: "That producer name is already taken" }, { status: 409 });
+    }
+    throw err;
+  }
 
   return NextResponse.json({
     user: { ...user, profileImageUrl: fileUrl(user.profileImage), bannerImageUrl: fileUrl(user.bannerImage) },
