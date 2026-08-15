@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Loader2 } from "lucide-react";
+import { Loader2, ImageIcon, X } from "lucide-react";
 import { MAX_IMAGE_SIZE_BYTES } from "@/lib/constants";
 import { initials } from "@/lib/utils";
 
@@ -11,10 +11,12 @@ export function ProfileForm({
   initialProducerName,
   initialBio,
   initialImageUrl,
+  initialBannerUrl,
 }: {
   initialProducerName: string;
   initialBio: string;
   initialImageUrl: string | null;
+  initialBannerUrl: string | null;
 }) {
   const router = useRouter();
 
@@ -22,11 +24,15 @@ export function ProfileForm({
   const [bio, setBio] = useState(initialBio);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(initialImageUrl);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(initialBannerUrl);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   function handleAvatarSelect(file: File) {
     setError(null);
@@ -40,6 +46,27 @@ export function ProfileForm({
     }
     setAvatarFile(file);
     setAvatarPreview(URL.createObjectURL(file));
+  }
+
+  function handleBannerSelect(file: File) {
+    setError(null);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Banner must be a JPG, PNG, or WEBP image");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setError(`Banner must be under ${Math.round(MAX_IMAGE_SIZE_BYTES / 1024 / 1024)}MB`);
+      return;
+    }
+    setBannerFile(file);
+    setBannerPreview(URL.createObjectURL(file));
+    setBannerRemoved(false);
+  }
+
+  function handleRemoveBanner() {
+    setBannerFile(null);
+    setBannerPreview(null);
+    setBannerRemoved(true);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -56,6 +83,8 @@ export function ProfileForm({
     formData.set("producerName", producerName.trim());
     formData.set("bio", bio.trim());
     if (avatarFile) formData.set("avatar", avatarFile);
+    if (bannerFile) formData.set("banner", bannerFile);
+    if (bannerRemoved) formData.set("removeBanner", "true");
 
     setSubmitting(true);
     const res = await fetch("/api/profile", { method: "PATCH", body: formData });
@@ -73,6 +102,48 @@ export function ProfileForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+      <div>
+        <label className="mb-2 block text-sm font-medium text-foreground">
+          Profile banner <span className="font-normal text-muted-2">(optional)</span>
+        </label>
+        <p className="mb-2.5 text-xs text-muted-2">
+          Shown across the top of your public profile. Recommended around 3:1 (e.g. 1500×500).
+        </p>
+        <div
+          onClick={() => bannerInputRef.current?.click()}
+          className="relative flex h-28 w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-surface transition hover:border-muted-2 sm:h-36"
+        >
+          <input
+            ref={bannerInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleBannerSelect(e.target.files[0])}
+          />
+          {bannerPreview ? (
+            <Image src={bannerPreview} alt="Banner preview" fill className="object-cover" />
+          ) : (
+            <div className="flex flex-col items-center gap-1.5 text-muted-2">
+              <ImageIcon size={20} />
+              <span className="text-xs">Click to upload a banner</span>
+            </div>
+          )}
+        </div>
+        {bannerPreview && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemoveBanner();
+            }}
+            className="mt-2 flex items-center gap-1 text-xs text-muted underline-offset-2 hover:text-danger hover:underline"
+          >
+            <X size={11} />
+            Remove banner
+          </button>
+        )}
+      </div>
+
       <div>
         <label className="mb-2 block text-sm font-medium text-foreground">Profile picture</label>
         <div className="flex items-center gap-4">

@@ -27,7 +27,7 @@ export interface StorageAdapter {
   exists(key: string): Promise<boolean>;
 }
 
-export type StorageKind = "audio" | "covers" | "avatars" | "collab" | "license";
+export type StorageKind = "audio" | "covers" | "avatars" | "banners" | "collab" | "license";
 
 /** MIME type for a stored object, inferred from its extension — used both when writing to R2 and when serving. */
 export const CONTENT_TYPE_BY_EXT: Record<string, string> = {

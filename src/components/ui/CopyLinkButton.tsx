@@ -4,20 +4,36 @@ import { useState } from "react";
 import { Check, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Copies the full shareable URL for `path` (e.g. a producer profile or beat page) to the clipboard. */
+/** Shares (or copies) the full shareable URL for `path` (e.g. a producer profile or beat page). Uses the native share sheet on devices that support it, otherwise copies to the clipboard. */
 export function CopyLinkButton({
   path,
   label = "Copy link",
+  shareTitle,
   className,
 }: {
   path: string;
   label?: string;
+  /** When set, tries navigator.share first (mobile share sheet) before falling back to clipboard copy. */
+  shareTitle?: string;
   className?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
     const url = `${window.location.origin}${path}`;
+
+    if (shareTitle && typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, url });
+        return;
+      } catch (err) {
+        // User cancelled the share sheet — do nothing, don't surprise them
+        // with a clipboard copy they didn't ask for. Any other failure
+        // falls through to the clipboard fallback below.
+        if (err instanceof Error && err.name === "AbortError") return;
+      }
+    }
+
     try {
       await navigator.clipboard.writeText(url);
     } catch {

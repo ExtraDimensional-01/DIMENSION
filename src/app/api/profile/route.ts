@@ -23,6 +23,8 @@ export async function PATCH(req: Request) {
   const contentType = req.headers.get("content-type") ?? "";
   let fields: Record<string, unknown> = {};
   let avatarFile: File | null = null;
+  let bannerFile: File | null = null;
+  let removeBanner = false;
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await req.formData();
@@ -30,6 +32,9 @@ export async function PATCH(req: Request) {
     fields.bio = formData.get("bio") ?? "";
     const avatar = formData.get("avatar");
     if (avatar instanceof File && avatar.size > 0) avatarFile = avatar;
+    const banner = formData.get("banner");
+    if (banner instanceof File && banner.size > 0) bannerFile = banner;
+    removeBanner = formData.get("removeBanner") === "true";
   } else {
     fields = await req.json().catch(() => ({}));
   }
@@ -64,17 +69,42 @@ export async function PATCH(req: Request) {
     if (currentUser.profileImage) await storage.delete(currentUser.profileImage);
   }
 
+  let newBannerKey: string | null | undefined;
+
+  if (bannerFile) {
+    const ext = ALLOWED_IMAGE_TYPES[bannerFile.type];
+    if (!ext) {
+      return NextResponse.json(
+        { error: "Banner must be a JPG, PNG, or WEBP image" },
+        { status: 400 }
+      );
+    }
+    if (bannerFile.size > MAX_IMAGE_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: `Banner must be under ${Math.round(MAX_IMAGE_SIZE_BYTES / 1024 / 1024)}MB` },
+        { status: 400 }
+      );
+    }
+    const buffer = Buffer.from(await bannerFile.arrayBuffer());
+    newBannerKey = await storage.save(buffer, "banners", ext);
+    if (currentUser.bannerImage) await storage.delete(currentUser.bannerImage);
+  } else if (removeBanner && currentUser.bannerImage) {
+    await storage.delete(currentUser.bannerImage);
+    newBannerKey = null;
+  }
+
   const user = await db.user.update({
     where: { id: session.user.id },
     data: {
       producerName: parsed.data.producerName,
       bio: parsed.data.bio,
       ...(newAvatarKey ? { profileImage: newAvatarKey } : {}),
+      ...(newBannerKey !== undefined ? { bannerImage: newBannerKey } : {}),
     },
-    select: { id: true, producerName: true, bio: true, profileImage: true, email: true },
+    select: { id: true, producerName: true, bio: true, profileImage: true, bannerImage: true, email: true },
   });
 
   return NextResponse.json({
-    user: { ...user, profileImageUrl: fileUrl(user.profileImage) },
+    user: { ...user, profileImageUrl: fileUrl(user.profileImage), bannerImageUrl: fileUrl(user.bannerImage) },
   });
 }

@@ -17,6 +17,7 @@ model User {
   role          String   @default("producer") // "producer" | "viewer" — plain string since SQLite has no native enum support in Prisma
   bio           String   @default("")
   profileImage  String? // storage key for profile picture
+  bannerImage   String? // storage key for the profile banner shown behind the header
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   // Soft delete: set on self-service account deletion. The row (and its
@@ -46,7 +47,50 @@ model User {
   ordersAsBuyer  Order[] @relation("OrdersAsBuyer")
   ordersAsSeller Order[] @relation("OrdersAsSeller")
 
+  // --- Social graph ---
+  followers   Follow[]     @relation("Followers") // rows where this user is followed
+  following   Follow[]     @relation("Following") // rows where this user is the one following
+  socialLinks SocialLink[]
+
   @@map("users")
+}
+
+// A follows B: followerId = A, followingId = B. The unique constraint is the
+// entire mechanism preventing duplicate follows — routes rely on catching
+// its violation rather than a separate check-then-create race.
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@index([followerId])
+  @@map("follows")
+}
+
+// One row per (user, platform) — e.g. a producer's Instagram link. The
+// unique constraint means "saving" a platform's link is always a single
+// upsert, never a duplicate-insert risk.
+model SocialLink {
+  id          String   @id @default(cuid())
+  userId      String
+  platform    String // one of SOCIAL_PLATFORMS in src/lib/constants.ts
+  url         String
+  displayName String   @default("")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("social_links")
 }
 
 model Message {

@@ -153,8 +153,29 @@ export const NOTIFICATION_TYPES = [
   "order_new",
   "order_confirmed",
   "order_declined",
+  "new_follower",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+// =============================================================================
+// Social graph — producer follows and external profile links
+// =============================================================================
+
+export const FOLLOW_LIST_PAGE_SIZE = 20;
+
+/** Every platform a producer can link — add new ones here only; nothing else needs to change. */
+export const SOCIAL_PLATFORMS = [
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "youtube", label: "YouTube" },
+  { value: "twitter", label: "X / Twitter" },
+  { value: "soundcloud", label: "SoundCloud" },
+  { value: "spotify", label: "Spotify" },
+  { value: "twitch", label: "Twitch" },
+  { value: "discord", label: "Discord" },
+  { value: "website", label: "Website" },
+] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number]["value"];
 
 // =============================================================================
 // Orders — buyer/seller-coordinated, trust-based beat purchases. DIMENSION

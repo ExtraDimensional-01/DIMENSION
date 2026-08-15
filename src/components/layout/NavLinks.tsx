@@ -17,7 +17,8 @@ export function NavLinks() {
   return (
     <nav className="hidden items-center gap-7 md:flex">
       {LINKS.map((link, i) => {
-        const isActive = link.href === "/" ? pathname === "/" : pathname === link.href;
+        const isActive =
+          link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`);
         return (
           <Link
             key={link.label + i}

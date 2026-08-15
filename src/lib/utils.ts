@@ -37,6 +37,12 @@ export function formatRelativeDate(date: Date | string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** Formats a date as "Month Year", e.g. "Feb 2026" — used for "Joined ..." labels. */
+export function formatMonthYear(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
 /** Formats cents as a USD price, e.g. 2999 -> "$29.99" */
 export function formatPrice(cents: number | null | undefined): string | null {
   if (cents == null) return null;

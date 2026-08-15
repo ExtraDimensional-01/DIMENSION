@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       id: true,
       producerName: true,
       profileImage: true,
-      _count: { select: { beats: { where: { isPublic: true } } } },
+      _count: { select: { beats: { where: { isPublic: true } }, followers: true } },
     },
     orderBy: { producerName: "asc" },
     take: 6,
@@ -28,6 +28,7 @@ export async function GET(req: Request) {
       producerName: p.producerName,
       profileImageUrl: fileUrl(p.profileImage),
       beatCount: p._count.beats,
+      followerCount: p._count.followers,
     })),
   });
 }
