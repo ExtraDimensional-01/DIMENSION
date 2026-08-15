@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { signupSchema } from "@/lib/validations";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       select: { id: true, email: true, producerName: true, role: true },
     });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    if (isUniqueConstraintError(err)) {
       return NextResponse.json(
         { error: "That producer name is already taken" },
         { status: 409 }

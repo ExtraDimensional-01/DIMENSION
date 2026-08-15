@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/notify";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 
 /** Follow a producer. Idempotent: following someone you already follow just confirms the existing state, no duplicate row. */
 export async function POST(
@@ -40,7 +40,7 @@ export async function POST(
   } catch (err) {
     // Unique constraint violation = already following — treat as success,
     // not an error, since the end state the caller wanted is already true.
-    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")) {
+    if (!isUniqueConstraintError(err)) {
       throw err;
     }
   }

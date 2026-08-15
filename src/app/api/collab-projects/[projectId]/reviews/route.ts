@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { reviewSchema } from "@/lib/collab-validations";
 import { serializeReview } from "@/lib/collab-serialize";
 import { createNotification } from "@/lib/notify";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 
 const reviewInclude = {
   reviewer: { select: { id: true, producerName: true, profileImage: true } },
@@ -79,7 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       include: reviewInclude,
     });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    if (isUniqueConstraintError(err)) {
       return NextResponse.json({ error: "You've already reviewed this person for this collaboration" }, { status: 400 });
     }
     throw err;

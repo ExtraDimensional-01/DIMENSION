@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 import { storage } from "@/lib/storage";
 import { profileUpdateSchema } from "@/lib/validations";
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE_BYTES } from "@/lib/constants";
@@ -108,7 +108,7 @@ export async function PATCH(req: Request) {
       select: { id: true, producerName: true, bio: true, profileImage: true, bannerImage: true, email: true },
     });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    if (isUniqueConstraintError(err)) {
       return NextResponse.json({ error: "That producer name is already taken" }, { status: 409 });
     }
     throw err;
