@@ -50,7 +50,7 @@ export function BackgroundMusicWidget() {
       </button>
 
       {open && (
-        <div className="cut-corner-sm absolute right-0 top-full z-50 mt-2 w-60 animate-fade-in border border-border bg-surface/95 p-3.5 shadow-xl shadow-black/40 backdrop-blur-xl">
+        <div className="cut-corner-sm absolute left-1/2 top-full z-50 mt-2 w-60 -translate-x-1/2 animate-fade-in border border-border bg-surface/95 p-3.5 shadow-xl shadow-black/40 backdrop-blur-xl sm:left-auto sm:right-0 sm:translate-x-0">
           <div className="mb-3 flex items-center justify-between">
             <span className="kicker text-[10px]">Ambience</span>
             <span className="truncate text-[11px] text-muted-2">{currentTrack.title}</span>
