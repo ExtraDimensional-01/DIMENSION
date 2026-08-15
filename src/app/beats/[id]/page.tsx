@@ -12,6 +12,7 @@ import { formatRelativeDate, formatPrice, formatFileSize } from "@/lib/utils";
 import { BeatDetailPlayButton } from "@/components/beats/BeatDetailPlayButton";
 import { DeleteBeatButton } from "@/components/beats/DeleteBeatButton";
 import { BuyButton } from "@/components/beats/BuyButton";
+import { CopyLinkButton } from "@/components/ui/CopyLinkButton";
 
 export async function generateMetadata({
   params,
@@ -116,6 +117,7 @@ export default async function BeatDetailPage({
 
           <div className="flex flex-wrap items-center gap-3">
             <BeatDetailPlayButton beat={beat} />
+            <CopyLinkButton path={`/beats/${beat.id}`} />
 
             {isOwner && (
               <>

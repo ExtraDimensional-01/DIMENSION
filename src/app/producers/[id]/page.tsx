@@ -12,6 +12,7 @@ import { fileUrl } from "@/lib/storage";
 import { formatRelativeDate, initials } from "@/lib/utils";
 import { BeatGrid } from "@/components/beats/BeatGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { CopyLinkButton } from "@/components/ui/CopyLinkButton";
 
 export async function generateMetadata({
   params,
@@ -83,15 +84,18 @@ export default async function ProducerProfilePage({
               {producer.bio}
             </p>
           )}
-          {session?.user && !isOwnProfile && producer.role === "producer" && (
-            <Link
-              href={`/messages/${producer.id}`}
-              className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
-            >
-              <MessageSquare size={14} />
-              Message
-            </Link>
-          )}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+            {session?.user && !isOwnProfile && producer.role === "producer" && (
+              <Link
+                href={`/messages/${producer.id}`}
+                className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
+              >
+                <MessageSquare size={14} />
+                Message
+              </Link>
+            )}
+            <CopyLinkButton path={`/producers/${producer.id}`} label="Copy profile link" />
+          </div>
         </div>
       </div>
 
