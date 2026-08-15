@@ -7,6 +7,7 @@ import { beatInclude } from "@/lib/beat-query";
 import { serializeBeatSummary } from "@/lib/serialize";
 import { MyBeatsList } from "@/components/dashboard/MyBeatsList";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { CopyLinkButton } from "@/components/ui/CopyLinkButton";
 import { BrandMark } from "@/components/layout/BrandMark";
 
 export const metadata: Metadata = { title: "Dashboard — DIMENSION" };
@@ -35,13 +36,16 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Your beats</h1>
           <p className="mt-1 text-sm text-muted">Manage your uploads and track performance</p>
         </div>
-        <Link
-          href="/dashboard/upload"
-          className="flex items-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
-        >
-          <UploadCloud size={15} />
-          Upload a beat
-        </Link>
+        <div className="flex items-center gap-2">
+          <CopyLinkButton path={`/producers/${userId}`} label="Copy profile link" className="px-4 py-2.5" />
+          <Link
+            href="/dashboard/upload"
+            className="flex items-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-accent-foreground transition hover:bg-accent-hover"
+          >
+            <UploadCloud size={15} />
+            Upload a beat
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:max-w-md">
