@@ -56,7 +56,40 @@ model User {
   following   Follow[]     @relation("Following") // rows where this user is the one following
   socialLinks SocialLink[]
 
+  passwordResetTokens PasswordResetToken[]
+
   @@map("users")
+}
+
+// Password-reset tokens. Only the SHA-256 hash of the emailed token is ever
+// stored, so a database leak can't be turned into account takeovers. A token
+// is single-use (usedAt is claimed atomically) and short-lived (expiresAt).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// Generic DB-backed rate-limit counter (see src/lib/rate-limit.ts). Stored in
+// the database rather than process memory because production runs on
+// serverless functions, where in-memory counters don't survive or share
+// across instances. `key` is e.g. "pwreset:ip:1.2.3.4".
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@map("rate_limit_hits")
 }
 
 // A follows B: followerId = A, followingId = B. The unique constraint is the

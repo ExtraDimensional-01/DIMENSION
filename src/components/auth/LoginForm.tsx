@@ -11,6 +11,7 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const resetSuccess = searchParams.get("reset") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +78,21 @@ export function LoginForm() {
             className="rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-accent"
             placeholder="••••••••"
           />
+          <div className="flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-muted transition hover:text-accent"
+            >
+              Forgot Password?
+            </Link>
+          </div>
         </div>
+
+        {resetSuccess && !error && (
+          <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+            Your password has been reset. Log in with your new password.
+          </p>
+        )}
 
         {error && (
           <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">

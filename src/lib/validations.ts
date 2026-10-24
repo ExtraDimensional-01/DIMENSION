@@ -19,6 +19,20 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Reset token is missing").max(200),
+  // Same minimum as signup; the upper bound just stops absurdly large
+  // payloads from being fed to bcrypt.
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(200, "Password is too long"),
+});
+
 export const beatMetadataSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(100),
   bpm: z.coerce.number().int().min(20, "BPM seems too low").max(300, "BPM seems too high"),

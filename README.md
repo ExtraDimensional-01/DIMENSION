@@ -95,6 +95,20 @@ src/middleware.ts          Protects /dashboard/* routes, redirects to /login
 storage/                   Uploaded audio/cover/avatar files (gitignored, outside src/)
 ```
 
+## Password reset
+
+"Forgot Password?" on `/login` leads to `/forgot-password`, which emails a
+single-use link to `/reset-password`. Only a SHA-256 hash of the token is
+stored; links expire after 1 hour, a new request replaces any earlier link,
+and responses never reveal whether an email has an account. Requests are
+rate-limited per IP and per account (DB-backed, see `src/lib/rate-limit.ts`).
+
+Configuration (see `.env.example`): `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`.
+In development with these unset, the reset link is printed to the server
+console instead of being emailed. In production all three are required.
+After pulling this change, apply the new migration (`npx prisma migrate dev`
+locally; against Turso in production).
+
 ## Security notes
 
 - Passwords are hashed with bcrypt; raw passwords are never stored or logged.
