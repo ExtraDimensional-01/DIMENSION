@@ -19,6 +19,15 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "This reset link is invalid or has expired"),
+  password: signupSchema.shape.password,
+});
+
 export const beatMetadataSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(100),
   bpm: z.coerce.number().int().min(20, "BPM seems too low").max(300, "BPM seems too high"),

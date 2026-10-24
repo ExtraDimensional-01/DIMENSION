@@ -77,6 +77,14 @@ export function LoginForm() {
             className="rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none transition focus:border-accent"
             placeholder="••••••••"
           />
+          <div className="flex justify-end">
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-muted transition hover:text-accent"
+            >
+              Forgot Password?
+            </Link>
+          </div>
         </div>
 
         {error && (
